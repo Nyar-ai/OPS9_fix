@@ -1,0 +1,12 @@
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM3/port.c
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/FreeRTOS.h
+ops9_fix\port.o: D:\kail5\ARM\ARMCC\Bin\..\include\stddef.h
+ops9_fix\port.o: D:\kail5\ARM\ARMCC\Bin\..\include\stdint.h
+ops9_fix\port.o: ../Core/Inc/FreeRTOSConfig.h
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/projdefs.h
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/portable.h
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/deprecated_definitions.h
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM3/portmacro.h
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/mpu_wrappers.h
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/task.h
+ops9_fix\port.o: ../Middlewares/Third_Party/FreeRTOS/Source/include/list.h

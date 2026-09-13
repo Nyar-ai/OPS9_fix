@@ -25,7 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "cyz_gyro.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -95,7 +95,10 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  /* QMM01/CY-Z gyro on USART1: bind the handle and arm byte-wise interrupt
+     reception. Runs after MX_USART1_UART_Init() and before the scheduler
+     starts, so the module is already reporting once the tasks run. */
+  cyz_gyro_init();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -158,7 +161,18 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* Both UARTs share these HAL callbacks, so every event is dispatched on the
+   handle: the gyro access layer ignores anything that is not its own USART1
+   handle, which leaves the USART2 robot link and its reception untouched. */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  cyz_gyro_on_rx_complete(huart);
+}
 
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  cyz_gyro_on_uart_error(huart);
+}
 /* USER CODE END 4 */
 
 /**

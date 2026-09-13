@@ -378,6 +378,64 @@ cyz_proto_result_t cyz_proto_feed(cyz_proto_t *p, uint8_t byte, cyz_proto_frame_
   return result;
 }
 
+/* ---- link health (T5) --------------------------------------------------
+   The decision the PC13 indicator makes, kept here because this file is the
+   project's PC-testable seam: same input, same output, no HAL, no clock. */
+cyz_proto_link_state_t cyz_proto_link_state(uint32_t now_ms, uint32_t last_rx_ms)
+{
+  if (last_rx_ms == 0u)
+  {
+    return CYZ_LINK_OFF; /* nothing valid has arrived since reset */
+  }
+
+  /* Difference form on purpose: the true age of the last frame falls out of
+     unsigned arithmetic across a wrap, as long as it is below 2^31 ms (24 days),
+     where "now > last + timeout" would answer wrongly for the whole wrap. */
+  if ((uint32_t)(now_ms - last_rx_ms) > CYZ_PROTO_LINK_TIMEOUT_MS)
+  {
+    return CYZ_LINK_SLOW_BLINK;
+  }
+  return CYZ_LINK_ON;
+}
+
+/* ---- report-rate negotiation helpers (T4) ------------------------------ */
+static uint16_t rate_nominal_hz(uint8_t code)
+{
+  switch (code)
+  {
+    case CYZ_RATE_200HZ: return 200u;
+    case CYZ_RATE_100HZ: return 100u;
+    case CYZ_RATE_50HZ:  return 50u;
+    default:             return 0u; /* 20/10 Hz and polling mode are not in the chain */
+  }
+}
+
+uint8_t cyz_proto_rate_next_lower(uint8_t code)
+{
+  switch (code)
+  {
+    case CYZ_RATE_200HZ: return (uint8_t)CYZ_RATE_100HZ;
+    case CYZ_RATE_100HZ: return (uint8_t)CYZ_RATE_50HZ;
+    default:             return (uint8_t)CYZ_PROTO_RATE_NONE;
+  }
+}
+
+uint8_t cyz_proto_rate_matches(uint8_t code, uint16_t measured_hz)
+{
+  uint16_t nominal = rate_nominal_hz(code);
+  uint32_t low;
+  uint32_t high;
+
+  if ((nominal == 0u) || (measured_hz == 0u))
+  {
+    return 0u; /* no such gear, or nothing arrived to measure */
+  }
+
+  low  = ((uint32_t)nominal * 3u) / 4u;
+  high = ((uint32_t)nominal * 5u) / 4u;
+  return (uint8_t)(((uint32_t)measured_hz >= low) && ((uint32_t)measured_hz <= high));
+}
+
 
 
 

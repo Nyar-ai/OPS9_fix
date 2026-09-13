@@ -25,7 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "cyz_gyro.h" /* gyro report-rate negotiation + PC13 indicator, polled below */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -117,6 +117,15 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
+    /* The 1 ms cadence that was already here also carries the gyro layer's two
+       periodic jobs, so neither needs a task, a timer or a queue:
+       - the report-rate negotiation is a polled state machine: one bounded
+         transmit at a time and HAL_GetTick() windows; a module that never
+         answers costs it time and nothing else,
+       - the PC13 indicator decides its level from the arrival time of the last
+         valid frame - the USART1 interrupt never drives a GPIO itself. */
+    cyz_gyro_rate_negotiate_poll();
+    cyz_gyro_indicator_tick();
     osDelay(1);
   }
   /* USER CODE END StartDefaultTask */

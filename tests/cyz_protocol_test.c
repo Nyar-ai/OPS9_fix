@@ -544,6 +544,78 @@ static void test_fsm_recovers_after_lost_byte(void)
   CHECK(p.frames_bad == 1u);
 }
 
+/* ==== tests: report-rate negotiation helpers (T4) ====================== */
+static void test_rate_negotiation_helpers(void)
+{
+  /* the negotiated chain, rung by rung */
+  CHECK(cyz_proto_rate_next_lower(CYZ_RATE_200HZ) == CYZ_RATE_100HZ);
+  CHECK(cyz_proto_rate_next_lower(CYZ_RATE_100HZ) == CYZ_RATE_50HZ);
+  CHECK(cyz_proto_rate_next_lower(CYZ_RATE_50HZ) == CYZ_PROTO_RATE_NONE);
+
+  /* codes outside the chain have no rung below them either - a wrong answer here
+     would let the negotiation send a gear it must never set */
+  CHECK(cyz_proto_rate_next_lower(CYZ_RATE_POLLING) == CYZ_PROTO_RATE_NONE);
+  CHECK(cyz_proto_rate_next_lower(CYZ_RATE_20HZ) == CYZ_PROTO_RATE_NONE);
+  CHECK(cyz_proto_rate_next_lower(CYZ_RATE_10HZ) == CYZ_PROTO_RATE_NONE);
+  CHECK(cyz_proto_rate_next_lower(0x06u) == CYZ_PROTO_RATE_NONE);
+
+  /* a measured rate stands for its own gear ... */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 200u) == 1u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_100HZ, 100u) == 1u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_50HZ, 50u) == 1u);
+
+  /* ... inside the +-25% window, integer edges included ... */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 150u) == 1u); /* 200 * 3/4 */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 250u) == 1u); /* 200 * 5/4 */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_100HZ, 75u) == 1u);  /* 100 * 3/4 */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_100HZ, 125u) == 1u); /* 100 * 5/4 */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_50HZ, 37u) == 1u);   /* 150/4 truncates */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_50HZ, 62u) == 1u);   /* 250/4 truncates */
+
+  /* ... but never for another gear: this is what catches a module that stayed at
+     50 Hz while the firmware asked for 200 Hz */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 100u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 50u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_100HZ, 200u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_100HZ, 50u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_50HZ, 100u) == 0u);
+
+  /* just outside the window */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 149u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 251u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_50HZ, 36u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_50HZ, 63u) == 0u);
+
+  /* silence never confirms a gear, and neither does a code outside the chain */
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_200HZ, 0u) == 0u);
+  CHECK(cyz_proto_rate_matches(CYZ_RATE_POLLING, 50u) == 0u);
+  CHECK(cyz_proto_rate_matches(0x06u, 100u) == 0u);
+}
+
+/* ==== tests: link health decision (T5) ================================= */
+static void test_link_state_three_states(void)
+{
+  /* never received: dark, whatever the clock says - an unwired, unpowered or
+     I2C-selected module looks exactly like this */
+  CHECK(cyz_proto_link_state(0u, 0u) == CYZ_LINK_OFF);
+  CHECK(cyz_proto_link_state(5000u, 0u) == CYZ_LINK_OFF);
+  CHECK(cyz_proto_link_state(0xFFFFFFFFu, 0u) == CYZ_LINK_OFF);
+
+  /* a frame within the last second: lit */
+  CHECK(cyz_proto_link_state(1000u, 1000u) == CYZ_LINK_ON);
+  CHECK(cyz_proto_link_state(1001u, 1000u) == CYZ_LINK_ON);
+  CHECK(cyz_proto_link_state(2000u, 1000u) == CYZ_LINK_ON); /* exactly one second */
+
+  /* older than a second: slow blink - a dropped link, or polling mode 0x03 */
+  CHECK(cyz_proto_link_state(2001u, 1000u) == CYZ_LINK_SLOW_BLINK);
+  CHECK(cyz_proto_link_state(3000u, 1000u) == CYZ_LINK_SLOW_BLINK);
+
+  /* the tick counter wraps at 2^32: the three states must stay right across the
+     wrap instead of pinning the indicator to lit or dark forever */
+  CHECK(cyz_proto_link_state(0x00000100u, 0xFFFFFF00u) == CYZ_LINK_ON);         /* 512 ms */
+  CHECK(cyz_proto_link_state(0x00001000u, 0xFFFF0000u) == CYZ_LINK_SLOW_BLINK); /* 69.6 s */
+}
+
 int main(void)
 {
   test_crc16();
@@ -564,6 +636,8 @@ int main(void)
   test_frame_out_marked_none_on_bad_frame();
   test_frame_out_untouched_until_frame_completes();
   test_fsm_recovers_after_lost_byte();
+  test_rate_negotiation_helpers();
+  test_link_state_three_states();
 
   printf("cyz_protocol_test: %d checks passed, %d failed\n", g_pass, g_fail);
   return (g_fail == 0) ? 0 : 1;

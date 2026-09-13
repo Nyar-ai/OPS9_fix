@@ -175,4 +175,45 @@ void cyz_proto_init(cyz_proto_t *p);
    the parser resynchronises on the next header byte, so it always self-heals. */
 cyz_proto_result_t cyz_proto_feed(cyz_proto_t *p, uint8_t byte, cyz_proto_frame_t *frame);
 
+/* ---- link health: the PC13 field indicator's decision (T5) -------------- */
+/* How long "receiving" survives a silence before the indicator admits the link
+   is quiet. One second is 200 frames at the negotiated 200 Hz, so a single lost
+   frame can never flap the indicator, while an unplugged module shows up within
+   the following second. */
+#define CYZ_PROTO_LINK_TIMEOUT_MS 1000u
+
+typedef enum
+{
+  CYZ_LINK_OFF        = 0, /* no valid frame has ever arrived */
+  CYZ_LINK_SLOW_BLINK = 1, /* frames arrived before, none within the timeout */
+  CYZ_LINK_ON         = 2  /* a valid frame arrived within the timeout */
+} cyz_proto_link_state_t;
+
+/* Pure three-state decision: (now, last_rx) -> state - no HAL, no globals, so it
+   is asserted on a PC.
+
+   last_rx_ms == 0 means "never received": the sentinel the access layer holds
+   until its first frame, and what an unwired, unpowered or I2C-selected module
+   looks like. The elapsed time is a difference, so a tick counter that wraps at
+   2^32 keeps the three states correct instead of pinning the indicator to lit or
+   dark forever. */
+cyz_proto_link_state_t cyz_proto_link_state(uint32_t now_ms, uint32_t last_rx_ms);
+
+/* ---- report-rate negotiation helpers (T4) ------------------------------- */
+/* The negotiated chain is 200 -> 100 -> 50 Hz; these two decisions of it stay
+   pure and PC-assertable, next to the packing that puts them on the wire. */
+#define CYZ_PROTO_RATE_NONE 0xFFu
+
+/* Next rung down the chain for a code this firmware tried, CYZ_PROTO_RATE_NONE
+   when there is none left. Codes outside the chain (20/10 Hz, polling mode) have
+   no rung at all, so a wrong answer here can never send an unintended gear. */
+uint8_t cyz_proto_rate_next_lower(uint8_t code);
+
+/* Does a measured frame rate (frames per second over the confirmation window)
+   stand for this rate code? +-25% is what "the right gear" means here: the point
+   is to catch a module that stayed at another gear, not to measure its crystal.
+   A code outside the chain, or a window with no frame at all, never matches - so
+   a silent link can never confirm a rate. */
+uint8_t cyz_proto_rate_matches(uint8_t code, uint16_t measured_hz);
+
 #endif /* CYZ_PROTOCOL_H */

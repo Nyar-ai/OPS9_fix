@@ -466,6 +466,84 @@ static void test_fsm_scale_frame(void)
   CHECK(p.frames_bad == 0u);
 }
 
+/* The access layer dispatches on frame.type after every return from the parser,
+   so a frame that failed validation must be marked as "nothing": a stale type
+   would let a bad frame overwrite the published snapshot. */
+static void test_frame_out_marked_none_on_bad_frame(void)
+{
+  cyz_proto_t p;
+  cyz_proto_frame_t f;
+  uint8_t corrupt[16];
+
+  memcpy(corrupt, k_telemetry_ok, 16u);
+  corrupt[13] ^= 0xFFu; /* CRC high byte broken */
+
+  cyz_proto_init(&p);
+
+  CHECK(feed_bytes(&p, k_telemetry_ok, 16u, &f) == CYZ_OK);
+  CHECK(f.type == CYZ_FRAME_TELEMETRY);
+
+  CHECK(feed_bytes(&p, corrupt, 16u, &f) == CYZ_ERR_CRC);
+  CHECK(f.type == CYZ_FRAME_NONE);        /* marked, not left stale */
+
+  /* What the access layer acts on is the type, so nothing here asserts how the
+     parser clears the payload of a rejected frame. */
+}
+
+/* Bytes of a frame that is still incomplete must not touch the caller's frame:
+   the access layer keeps serving the last published sample while they arrive. */
+static void test_frame_out_untouched_until_frame_completes(void)
+{
+  cyz_proto_t p;
+  cyz_proto_frame_t f;
+  uint8_t partial[15];
+
+  memcpy(partial, k_telemetry_ok, 15u); /* everything but the closing tail byte */
+
+  cyz_proto_init(&p);
+
+  f.type                  = CYZ_FRAME_TELEMETRY;
+  f.u.telemetry.seq       = 0xBEEFu;
+  f.u.telemetry.angle_deg = 42.0f;
+  f.u.telemetry.gyro_dps  = -1.5f;
+
+  CHECK(feed_bytes(&p, partial, 15u, &f) == CYZ_NO_FRAME);
+  CHECK(f.type == CYZ_FRAME_TELEMETRY);
+  CHECK(f.u.telemetry.seq == 0xBEEFu);
+  CHECK(f32_bits(f.u.telemetry.angle_deg) == f32_bits(42.0f));
+  CHECK(f32_bits(f.u.telemetry.gyro_dps) == f32_bits(-1.5f));
+  CHECK(p.frames_ok == 0u);
+}
+
+/* A byte lost on the wire leaves the parser waiting inside a frame; the bytes
+   that follow splice into it, so that one frame is rejected as malformed - and
+   the frame after it decodes again. This is the streaming half of the self
+   healing the receive interrupt relies on after a UART error. */
+static void test_fsm_recovers_after_lost_byte(void)
+{
+  cyz_proto_t p;
+  cyz_proto_frame_t f;
+
+  cyz_proto_init(&p);
+
+  /* only the first half of the frame arrives ... */
+  CHECK(feed_bytes(&p, k_telemetry_ok, 8u, &f) == CYZ_NO_FRAME);
+  CHECK(p.frames_ok == 0u);
+  CHECK(p.frames_bad == 0u);
+
+  /* ... so the next frame's bytes complete this one, which is rejected */
+  CHECK(feed_bytes(&p, k_telemetry_2, 16u, &f) == CYZ_NO_FRAME);
+  CHECK(p.frames_bad == 1u);
+  CHECK(p.frames_ok == 0u);
+
+  /* the parser is empty again: the next complete frame decodes */
+  CHECK(feed_bytes(&p, k_telemetry_ok, 16u, &f) == CYZ_OK);
+  CHECK(f.type == CYZ_FRAME_TELEMETRY);
+  CHECK(f.u.telemetry.seq == 1u);
+  CHECK(p.frames_ok == 1u);
+  CHECK(p.frames_bad == 1u);
+}
+
 int main(void)
 {
   test_crc16();
@@ -483,6 +561,9 @@ int main(void)
   test_fsm_bad_tail();
   test_fsm_ignores_own_command_frames();
   test_fsm_scale_frame();
+  test_frame_out_marked_none_on_bad_frame();
+  test_frame_out_untouched_until_frame_completes();
+  test_fsm_recovers_after_lost_byte();
 
   printf("cyz_protocol_test: %d checks passed, %d failed\n", g_pass, g_fail);
   return (g_fail == 0) ? 0 : 1;

@@ -431,6 +431,11 @@
               <FileType>1</FileType>
               <FilePath>../Core/Src/stm32f1xx_hal_timebase_tim.c</FilePath>
             </File>
+            <File>
+              <FileName>cyz_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/cyz_protocol.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

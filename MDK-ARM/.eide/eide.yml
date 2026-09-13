@@ -28,6 +28,7 @@ virtualFolder:
                 - path: ../Core/Src/stm32f1xx_it.c
                 - path: ../Core/Src/stm32f1xx_hal_msp.c
                 - path: ../Core/Src/stm32f1xx_hal_timebase_tim.c
+                - path: ../Core/Src/cyz_protocol.c
               folders: []
     - name: Drivers
       files: []
